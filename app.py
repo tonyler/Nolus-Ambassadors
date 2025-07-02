@@ -540,7 +540,7 @@ def update_tweet_metrics(tweet_id, impressions, likes=None, retweets=None, repli
     return False
 
 # Sidebar navigation
-st.sidebar.title("🚀 Ambassador Hub")
+st.sidebar.title("🚀 Nolans Hub")
 page = st.sidebar.selectbox(
     "Navigate to:",
     ["📊 Dashboard", "➕ Submit Tweet", "📈 Analytics", "⚙️ API Settings"]
