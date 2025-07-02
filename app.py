@@ -12,6 +12,10 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import queue
+import atexit
+
 
 # Page configuration
 st.set_page_config(
@@ -26,6 +30,50 @@ AMBASSADORS_FILE = "ambassadors.json"
 TWEETS_DATA_FILE = "tweets_data.json"
 BACKUP_DIR = "monthly_backups"
 CONFIG_FILE = "config.json"
+
+# Global variable for sheet updater process
+sheet_updater_process = None
+
+def auto_start_sheet_updater():
+    """Automatically start the sheet updater when app starts"""
+    global sheet_updater_process
+    
+    # Check if already running
+    if sheet_updater_process and sheet_updater_process.poll() is None:
+        return True
+    
+    try:
+        # Start the sheet updater process
+        sheet_updater_process = subprocess.Popen(
+            [sys.executable, "sheet_updater.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        
+        # Register cleanup function
+        atexit.register(cleanup_sheet_updater)
+        
+        print(f"🚀 Auto-started sheet updater (PID: {sheet_updater_process.pid})")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to auto-start sheet updater: {e}")
+        return False
+
+def cleanup_sheet_updater():
+    """Clean up sheet updater process when app exits"""
+    global sheet_updater_process
+    if sheet_updater_process and sheet_updater_process.poll() is None:
+        try:
+            sheet_updater_process.terminate()
+            sheet_updater_process.wait(timeout=5)
+            print("👋 Sheet updater stopped on app exit")
+        except:
+            pass
+
+# Auto-start the sheet updater when the app loads
+if 'sheet_updater_started' not in st.session_state:
+    st.session_state.sheet_updater_started = True
+    auto_start_sheet_updater()
 
 # Simple API counter functions
 def get_api_count():
@@ -59,7 +107,6 @@ def increment_api_count():
     except:
         return 0
 
-# Smart 3-day API management functions
 def get_tweets_ready_for_update():
     """Get tweets that are 3+ days old and haven't been updated yet"""
     tweets_data = load_tweets_data()
@@ -144,6 +191,136 @@ def get_smart_update_stats():
         'tweets_already_updated': tweets_already_updated
     }
 
+def start_sheet_updater():
+    """Start the sheet updater process (manual override)"""
+    global sheet_updater_process
+    try:
+        if sheet_updater_process and sheet_updater_process.poll() is None:
+            return False, "Sheet updater is already running"
+        
+        sheet_updater_process = subprocess.Popen(
+            [sys.executable, "sheet_updater.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        return True, "Sheet updater started successfully"
+    except Exception as e:
+        return False, f"Failed to start sheet updater: {e}"
+
+def stop_sheet_updater():
+    """Stop the sheet updater process"""
+    global sheet_updater_process
+    try:
+        if sheet_updater_process and sheet_updater_process.poll() is None:
+            sheet_updater_process.terminate()
+            sheet_updater_process.wait(timeout=5)
+            return True, "Sheet updater stopped"
+        else:
+            return False, "Sheet updater is not running"
+    except Exception as e:
+        return False, f"Failed to stop sheet updater: {e}"
+
+def is_sheet_updater_running():
+    """Check if sheet updater is running"""
+    global sheet_updater_process
+    if sheet_updater_process and sheet_updater_process.poll() is None:
+        return True
+    return False
+
+def manual_sheet_update():
+    """Trigger a manual sheet update"""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", """
+import sys
+sys.path.append('.')
+from sheet_updater import update_sheet
+update_sheet()
+"""],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            return True, "Manual sheet update completed"
+        else:
+            return False, f"Update failed: {result.stderr}"
+    except Exception as e:
+        return False, f"Error running manual update: {e}"
+
+def run_smart_x_collector():
+    """Run the smart X API collector with real-time output display"""
+    try:
+        # Create placeholders for real-time output
+        st.write("🔄 **Smart Collection Progress:**")
+        output_container = st.container()
+        
+        # Function to read subprocess output
+        def read_output(pipe, msg_queue):
+            for line in iter(pipe.readline, ''):
+                if line:
+                    msg_queue.put(line.strip())
+            pipe.close()
+        
+        # Start subprocess with real-time output capture
+        process = subprocess.Popen(
+            [sys.executable, "x_collector.py", "--smart"], 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            bufsize=1
+        )
+        
+        # Create queue for messages
+        msg_queue = queue.Queue()
+        
+        # Start thread to read output
+        reader_thread = threading.Thread(target=read_output, args=(process.stdout, msg_queue))
+        reader_thread.daemon = True
+        reader_thread.start()
+        
+        messages = []
+        
+        # Display messages in real-time
+        while process.poll() is None or not msg_queue.empty():
+            try:
+                # Get message from queue (non-blocking)
+                message = msg_queue.get_nowait()
+                messages.append(message)
+                
+                # Update display with latest messages
+                with output_container:
+                    for msg in messages[-10:]:  # Show last 10 messages
+                        if "✅" in msg or "🎉" in msg:
+                            st.success(msg)
+                        elif "❌" in msg or "⚠️" in msg:
+                            st.error(msg)
+                        elif "📡" in msg or "📊" in msg or "📝" in msg:
+                            st.info(msg)
+                        elif "🧠" in msg or "🚀" in msg:
+                            st.write(f"**{msg}**")
+                        else:
+                            st.text(msg)
+                
+            except queue.Empty:
+                time.sleep(0.1)
+        
+        # Wait for process completion
+        return_code = process.wait()
+        
+        if return_code == 0:
+            return True, "✅ Smart data collection completed successfully!"
+        else:
+            return False, f"❌ Collection failed with return code: {return_code}"
+            
+    except subprocess.TimeoutExpired:
+        return False, "❌ Collection timed out (took more than 5 minutes)"
+    except FileNotFoundError:
+        return False, "❌ x_collector.py not found. Make sure it's in the same directory."
+    except Exception as e:
+        return False, f"❌ Error running collector: {e}"
+
 def show_smart_api_dashboard():
     """Show the smart API management dashboard"""
     st.subheader("🧠 Smart API Management (3-Day Strategy)")
@@ -176,13 +353,26 @@ def show_smart_api_dashboard():
         col1, col2 = st.columns(2)
         with col1:
             if st.button(f"🧠 Update {stats['tweets_ready_for_update']} Ready Tweets", type="primary"):
-                with st.spinner("Collecting 3-day impression data..."):
-                    success, message = run_smart_x_collector()
-                    if success:
-                        st.success(message)
-                        st.rerun()
-                    else:
-                        st.error(message)
+                
+                # Show which tweets will be updated
+                st.write("📋 **Tweets to be updated:**")
+                for i, tweet in enumerate(ready_tweets[:5], 1):
+                    st.text(f"   {i}. {tweet['ambassador']}: {tweet['days_old']} days old")
+                if len(ready_tweets) > 5:
+                    st.text(f"   ... and {len(ready_tweets) - 5} more")
+                
+                st.divider()
+                
+                # Run smart collection with real-time output
+                success, message = run_smart_x_collector()
+                
+                if success:
+                    st.success(message)
+                    st.balloons()
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error(message)
         
         with col2:
             api_count = get_api_count()
@@ -210,24 +400,55 @@ def show_smart_api_dashboard():
         
         st.dataframe(display_ready_df, use_container_width=True, hide_index=True)
 
-def run_smart_x_collector():
-    """Run the smart X API collector that only updates 3+ day old tweets"""
-    try:
-        # Run the collector script with smart flag
-        result = subprocess.run([sys.executable, "x_collector.py", "--smart"], 
-                              capture_output=True, text=True, timeout=300)
-        
-        if result.returncode == 0:
-            return True, "✅ Smart data collection completed successfully!"
+    # Sheet Updater Status (Now Auto-Running)
+    st.subheader("📊 Google Sheets Integration (Auto-Running)")
+    
+    # Status check
+    is_running = is_sheet_updater_running()
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if is_running:
+            st.success("🟢 Auto-Updater: Running Every 10 Minutes")
         else:
-            return False, f"❌ Collection failed: {result.stderr}"
-            
-    except subprocess.TimeoutExpired:
-        return False, "❌ Collection timed out (took more than 5 minutes)"
-    except FileNotFoundError:
-        return False, "❌ x_collector.py not found. Make sure it's in the same directory."
-    except Exception as e:
-        return False, f"❌ Error running collector: {e}"
+            st.warning("🟡 Auto-Updater: Stopped (will restart on app reload)")
+    
+    with col2:
+        if st.button("🔄 Manual Update Now", type="secondary"):
+            with st.spinner("Updating Google Sheet..."):
+                success, message = manual_sheet_update()
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
+    
+    with col3:
+        st.info("💡 Updates every 10 minutes automatically")
+    
+    # Advanced controls (optional)
+    with st.expander("🔧 Advanced Controls"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("🚀 Restart Auto-Updater", disabled=is_running):
+                success, message = start_sheet_updater()
+                if success:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+        
+        with col2:
+            if st.button("⏹️ Stop Auto-Updater", disabled=not is_running):
+                success, message = stop_sheet_updater()
+                if success:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+    
+    st.divider()
 
 def run_manual_x_collector():
     """Run the X API collector for ALL tweets (manual/testing mode)"""
@@ -438,6 +659,8 @@ def add_tweet(ambassador_name, tweet_url, impressions=0, likes=0, retweets=0, re
     if save_tweets_data(tweets_data):
         # Backup to monthly JSON
         backup_tweet_to_monthly_json(ambassador_name, tweet_url, new_tweet)
+        sync_tweet_to_sheet(new_tweet, ambassador_name)
+
         return True, "Tweet added successfully"
     else:
         return False, "Failed to save tweet data"
@@ -540,14 +763,21 @@ def update_tweet_metrics(tweet_id, impressions, likes=None, retweets=None, repli
     return False
 
 # Sidebar navigation
-st.sidebar.title("🚀 Nolans Hub")
+# Center the logo using columns
+col1, col2, col3 = st.sidebar.columns([1, 2, 1])
+with col2:
+    st.image("img/nolus.png", width=120)  # Adjust width as needed
+
+# Center the title
+st.sidebar.markdown("<h1 style='text-align: center;'>Nolans Hub</h1>", unsafe_allow_html=True)
+
 page = st.sidebar.selectbox(
-    "Navigate to:",
-    ["📊 Dashboard", "➕ Submit Tweet", "📈 Analytics", "⚙️ API Settings"]
+    " ",
+    ["➕ Submit Tweet", "📊 Leaderboard", "📈 Analytics", "⚙️ API Settings"]
 )
 
 # Main content based on selected page
-if page == "📊 Dashboard":
+if page == "📊 Leaderboard":
     st.title("📊 Ambassador Leaderboard")
     
     # Get stats
@@ -787,3 +1017,10 @@ st.sidebar.markdown(f"📡 **API Calls: {api_count}/100**")
 smart_stats = get_smart_update_stats()
 if smart_stats['tweets_ready_for_update'] > 0:
     st.sidebar.markdown(f"🎯 **{smart_stats['tweets_ready_for_update']} tweets ready for 3-day update**")
+
+# Show auto-updater status in sidebar
+is_auto_running = is_sheet_updater_running()
+if is_auto_running:
+    st.sidebar.success("🟢 Auto-Updater: Running")
+else:
+    st.sidebar.warning("🟡 Auto-Updater: Stopped")

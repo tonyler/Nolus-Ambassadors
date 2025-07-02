@@ -36,27 +36,13 @@ def increment_api_count():
         return 0
 
 def load_config():
-    """Load X API configuration from environment variables or local file"""
+    """Load X API configuration"""
     try:
-        # Try environment variables first (for deployment)
-        bearer_token = os.getenv('BEARER_TOKEN')
-        if bearer_token:
-            return {
-                "x_api": {
-                    "bearer_token": bearer_token,
-                    "api_key": os.getenv('API_KEY', ''),
-                    "api_secret": os.getenv('API_SECRET', ''),
-                    "access_token": os.getenv('ACCESS_TOKEN', ''),
-                    "access_token_secret": os.getenv('ACCESS_TOKEN_SECRET', '')
-                }
-            }
-        
-        # Fallback to local config file
-        elif os.path.exists(CONFIG_FILE):
+        if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'r') as f:
                 return json.load(f)
         else:
-            print("❌ config.json not found and no environment variables set!")
+            print("❌ config.json not found!")
             return {}
     except Exception as e:
         print(f"❌ Error loading config: {e}")
