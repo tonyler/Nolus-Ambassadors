@@ -659,7 +659,6 @@ def add_tweet(ambassador_name, tweet_url, impressions=0, likes=0, retweets=0, re
     if save_tweets_data(tweets_data):
         # Backup to monthly JSON
         backup_tweet_to_monthly_json(ambassador_name, tweet_url, new_tweet)
-        sync_tweet_to_sheet(new_tweet, ambassador_name)
 
         return True, "Tweet added successfully"
     else:
