@@ -6,7 +6,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import time
-import time
 from update_service import UpdateService
 
 @st.cache_resource
@@ -31,8 +30,7 @@ except:
 
 page = st.sidebar.selectbox("Navigation", [
     "➕ Submit Tweet", 
-    "📊 Leaderboard", 
-    "⏳ Update"
+    "📊 Leaderboard"
 ])
 
 if page == "➕ Submit Tweet":
@@ -52,7 +50,6 @@ if page == "➕ Submit Tweet":
                 if success:
                     st.success(f"✅ {message}")
                     time.sleep(3)  # Show success for 3 seconds
-                    time.sleep(3)  # Show success for 3 seconds
                     st.balloons()
                     st.rerun()
                 else:
@@ -66,10 +63,13 @@ elif page == "📊 Leaderboard":
     col1, col2 = st.columns([3, 1])
     with col2:
         if st.button("🔄 Refresh"):
+            print("🔄 Refresh button clicked - reloading leaderboard data...")
             st.rerun()
     
     with st.spinner("Loading leaderboard..."):
+        print("📊 Loading leaderboard data from database...")
         leaderboard = service.get_leaderboard()
+        print(f"✅ Leaderboard loaded - Found {len(leaderboard) if leaderboard else 0} ambassadors with final metrics")
     
     if leaderboard:
         total_impressions = sum([amb['total_impressions'] for amb in leaderboard])
@@ -101,25 +101,6 @@ elif page == "📊 Leaderboard":
         })
         
         st.dataframe(df, use_container_width=True, hide_index=True)
-        st.info("🎉 **All metrics successfully collected!**")
         
     else:
         st.info("📝 **No leaderboard data yet!**")
-
-elif page == "⏳ Update":
-    st.title("⏳ Update Status")
-    
-    if st.button("Load", type="primary", use_container_width=True):
-        with st.spinner("Loading update data..."):
-            stats = service.get_update_stats()
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Tweets", stats['total_tweets'])
-        with col2:
-            st.metric("Under 3 Days", stats['tweets_under_3_days'])
-        with col3:
-            st.metric("Ready for Update", stats['tweets_ready_for_update'])
-        with col4:
-            st.metric("Updated", stats['tweets_updated'])
-        

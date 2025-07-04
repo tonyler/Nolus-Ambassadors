@@ -51,7 +51,8 @@ class UpdateService:
     
     def get_leaderboard(self):
         try:
-            result = self.supabase.table("ambassadors").select("*").eq("Final_Update", True).execute()
+            # Changed from Final_Update = True to date_posted is not NULL
+            result = self.supabase.table("ambassadors").select("*").not_.is_("date_posted", "null").execute()
             if not result.data:
                 return []
             
@@ -83,10 +84,12 @@ class UpdateService:
     def get_update_stats(self):
         try:
             all_tweets = self.supabase.table("ambassadors").select("*").execute()
-            updated_tweets = self.supabase.table("ambassadors").select("*").eq("Final_Update", True).execute()
+            # Changed from Final_Update = True to date_posted is not NULL
+            updated_tweets = self.supabase.table("ambassadors").select("*").not_.is_("date_posted", "null").execute()
             cutoff_date = datetime.now() - timedelta(days=3)
             cutoff_iso = cutoff_date.isoformat()
-            ready_tweets = self.supabase.table("ambassadors").select("*").eq("Final_Update", False).lt("Submitted_Date", cutoff_iso).execute()
+            # Changed from Final_Update = False to date_posted is NULL
+            ready_tweets = self.supabase.table("ambassadors").select("*").is_("date_posted", "null").lt("Submitted_Date", cutoff_iso).execute()
             
             total = len(all_tweets.data) if all_tweets.data else 0
             updated = len(updated_tweets.data) if updated_tweets.data else 0
@@ -105,7 +108,8 @@ class UpdateService:
         try:
             cutoff_date = datetime.now() - timedelta(days=3)
             cutoff_iso = cutoff_date.isoformat()
-            result = self.supabase.table("ambassadors").select("*").eq("Final_Update", False).lt("Submitted_Date", cutoff_iso).execute()
+            # Changed from Final_Update = False to date_posted is NULL
+            result = self.supabase.table("ambassadors").select("*").is_("date_posted", "null").lt("Submitted_Date", cutoff_iso).execute()
             ready_tweets = result.data if result.data else []
             
             for tweet in ready_tweets:
