@@ -77,9 +77,9 @@ elif page == "📊 Leaderboard":
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Final Impressions", f"{total_impressions:,}")
+            st.metric("Total Impressions", f"{total_impressions:,}")
         with col2:
-            st.metric("Tweets with Final Metrics", total_tweets)
+            st.metric("Posts Updated Metrics", total_tweets)
         with col3:
             st.metric("Active Ambassadors", len(leaderboard))
         
@@ -93,7 +93,7 @@ elif page == "📊 Leaderboard":
         
         df = df.rename(columns={
             'name': 'Ambassador',
-            'tweets': 'Tweets',
+            'tweets': 'Posts',
             'total_impressions': 'Total Impressions',
             'total_likes': 'Total Likes',
             'total_replies': 'Total Replies',
