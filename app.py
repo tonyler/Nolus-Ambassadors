@@ -12,6 +12,11 @@ from update_service import UpdateService
 def get_update_service():
     return UpdateService()
 
+# Clear cache on app restart to ensure latest code is loaded
+if 'service_initialized' not in st.session_state:
+    st.cache_resource.clear()
+    st.session_state.service_initialized = True
+
 service = get_update_service()
 
 st.set_page_config(
