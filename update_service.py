@@ -2,13 +2,20 @@ import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
+import streamlit as st
 
 load_dotenv()
 
 class UpdateService:
     def __init__(self):
-        url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_ANON_KEY")
+        # Try Streamlit secrets first, then environment variables
+        try:
+            url = st.secrets["SUPABASE_URL"]
+            key = st.secrets["SUPABASE_ANON_KEY"]
+        except:
+            url = os.getenv("SUPABASE_URL")
+            key = os.getenv("SUPABASE_ANON_KEY")
+        
         self.supabase = create_client(url, key)
         print("☁️ Streamlit Cloud service initialized")
     
