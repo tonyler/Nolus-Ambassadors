@@ -47,7 +47,7 @@ if page == "✨ Submit Content":
             "Tony", "Emlanis", "MonsieurPl4nche", "Martinezz", 
             "Beltein", "Odi", "Frifalin", "BlackOwl"
         ])
-        content_url = st.text_input("Content URL", placeholder="https://x.com/username/status/1234567890 or https://reddit.com/r/subreddit/comments/...")
+        content_url = st.text_input("Content URL")
         
         if st.form_submit_button("Submit Content"):
             if content_url:
