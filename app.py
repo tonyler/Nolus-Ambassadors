@@ -16,7 +16,7 @@ service = get_update_service()
 
 st.set_page_config(
     page_title="Ambassador Dashboard",
-    page_icon="🚀",
+    page_icon="img/nolus.png",
     layout="wide"
 )
 
