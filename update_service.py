@@ -249,9 +249,11 @@ class UpdateService:
                 if yesterday_record.data:
                     yesterday_total = yesterday_record.data[0]["total_impressions"]
                     impressions_gained = current_total - yesterday_total
+                    print(f"🔍 DEBUG: Today: {current_total}, Yesterday: {yesterday_total}, Gained: {impressions_gained}")
                 else:
-                    # If no yesterday record, use 0 as baseline
-                    impressions_gained = 0
+                    # If no yesterday record, assume yesterday was 0
+                    impressions_gained = current_total
+                    print(f"🔍 DEBUG: No yesterday record - Today: {current_total}, Gained: {impressions_gained}")
                 
                 self.supabase.table("daily_impressions").update({
                     "total_impressions": current_total,
