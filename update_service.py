@@ -239,10 +239,19 @@ class UpdateService:
             existing = self.supabase.table("daily_impressions").select("*").eq("date", today.isoformat()).execute()
             
             if existing.data:
-                # Update existing record
+                # Update existing record - calculate gain from yesterday's total
                 record_id = existing.data[0]["id"]
-                old_total = existing.data[0]["total_impressions"]
-                impressions_gained = current_total - old_total
+                
+                # Get yesterday's total to calculate proper gain
+                yesterday = today - timedelta(days=1)
+                yesterday_record = self.supabase.table("daily_impressions").select("total_impressions").eq("date", yesterday.isoformat()).execute()
+                
+                if yesterday_record.data:
+                    yesterday_total = yesterday_record.data[0]["total_impressions"]
+                    impressions_gained = current_total - yesterday_total
+                else:
+                    # If no yesterday record, use 0 as baseline
+                    impressions_gained = 0
                 
                 self.supabase.table("daily_impressions").update({
                     "total_impressions": current_total,
