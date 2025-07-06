@@ -123,29 +123,6 @@ elif page == "🐦 X Leaderboard":
         current_month = datetime.now().strftime("%B %Y")
         st.subheader(f"📊 Daily Impression Gains - {current_month}")
         
-        # Add manual calculation buttons
-        col1, col2, col3 = st.columns([2, 1, 1])
-        with col2:
-            if st.button("🔄 Calculate Today", key="calc_daily"):
-                with st.spinner("Calculating daily impressions..."):
-                    success, message = service.calculate_daily_impressions()
-                    if success:
-                        st.success(f"✅ {message}")
-                    else:
-                        st.error(f"❌ {message}")
-                    time.sleep(1)
-                    st.rerun()
-        with col3:
-            if st.button("🔄 Reset Today", key="reset_daily"):
-                with st.spinner("Resetting today to baseline..."):
-                    success, message = service.reset_today_impressions()
-                    if success:
-                        st.success(f"✅ {message}")
-                    else:
-                        st.error(f"❌ {message}")
-                    time.sleep(1)
-                    st.rerun()
-        
         # Get daily impressions data for current month
         try:
             daily_data = service.get_daily_impressions_for_month()
