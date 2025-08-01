@@ -93,14 +93,27 @@ class UpdateService:
                 return False, "Link has been added already"
             return False, f"Database error: {error_msg}"
     
-    def get_leaderboard(self):
+    def get_leaderboard(self, year=None, month=None):
         try:
-            # Changed from Final_Update = True to date_posted is not NULL
-            result = self.supabase.table("ambassadors").select("*").not_.is_("date_posted", "null").execute()
+            query = self.supabase.table("ambassadors").select("*").not_.is_("date_posted", "null")
+            
+            # Filter by month/year if provided
+            if year and month:
+                # Get start and end of month
+                start_date = datetime(year, month, 1).date()
+                from calendar import monthrange
+                last_day = monthrange(year, month)[1]
+                end_date = datetime(year, month, last_day).date()
+                
+                query = query.gte("date_posted", start_date.isoformat()).lte("date_posted", end_date.isoformat())
+            
+            result = query.execute()
             if not result.data:
                 return []
             
             ambassador_stats = {}
+            total_impressions_all = 0  # Track total from ALL posts for top metric
+            
             for tweet in result.data:
                 name = tweet["Ambassador"]
                 if name not in ambassador_stats:
@@ -114,20 +127,39 @@ class UpdateService:
                     }
                 
                 ambassador_stats[name]["tweets"] += 1
-                ambassador_stats[name]["total_impressions"] += tweet["Impressions"]
-                ambassador_stats[name]["total_likes"] += tweet["Likes"]
-                ambassador_stats[name]["total_replies"] += tweet["Replies"]
-                ambassador_stats[name]["total_retweets"] += tweet["Retweets"]
+                # Only count impressions for posts with at least 500 views
+                if tweet["Impressions"] >= 500:
+                    ambassador_stats[name]["total_impressions"] += tweet["Impressions"]
+                    ambassador_stats[name]["total_likes"] += tweet["Likes"]
+                    ambassador_stats[name]["total_replies"] += tweet["Replies"]
+                    ambassador_stats[name]["total_retweets"] += tweet["Retweets"]
+                
+                # Always add to total for top metric (regardless of 500+ filter)
+                total_impressions_all += tweet["Impressions"]
             
             leaderboard = list(ambassador_stats.values())
             leaderboard.sort(key=lambda x: x["total_impressions"], reverse=True)
-            return leaderboard
+            
+            # Add the unfiltered total to the return data
+            return leaderboard, total_impressions_all
         except:
-            return []
+            return [], 0
     
-    def get_reddit_leaderboard(self):
+    def get_reddit_leaderboard(self, year=None, month=None):
         try:
-            result = self.supabase.table("reddit").select("*").not_.is_("Score", "null").execute()
+            query = self.supabase.table("reddit").select("*").not_.is_("Score", "null")
+            
+            # Filter by month/year if provided
+            if year and month:
+                # Get start and end of month
+                start_date = datetime(year, month, 1).date()
+                from calendar import monthrange
+                last_day = monthrange(year, month)[1]
+                end_date = datetime(year, month, last_day).date()
+                
+                query = query.gte("submitted_at", start_date.isoformat()).lte("submitted_at", end_date.isoformat())
+            
+            result = query.execute()
             print(f"🔍 Reddit query result: {result.data}")  # Debug print
             if not result.data:
                 return []
@@ -141,12 +173,14 @@ class UpdateService:
                         "name": name,
                         "posts": 0,
                         "total_score": 0,
-                        "total_comments": 0
+                        "total_comments": 0,
+                        "total_views": 0
                     }
                 
                 ambassador_stats[name]["posts"] += 1
                 ambassador_stats[name]["total_score"] += post.get("Score", 0)
                 ambassador_stats[name]["total_comments"] += post.get("Comments", 0) if post.get("Comments") else 0
+                ambassador_stats[name]["total_views"] += post.get("Views", 0) if post.get("Views") else 0
             
             leaderboard = list(ambassador_stats.values())
             leaderboard.sort(key=lambda x: x["total_score"], reverse=True)
@@ -365,3 +399,128 @@ class UpdateService:
         except Exception as e:
             print(f"❌ Error in auto-calculation: {e}")
             return False, f"Auto-calculation error: {str(e)}"
+    
+    def get_total_leaderboard(self, year=None, month=None):
+        """Get combined views leaderboard from both X and Reddit platforms"""
+        try:
+            # Get X leaderboard data
+            x_result = self.get_leaderboard(year, month)
+            if isinstance(x_result, tuple):
+                x_leaderboard, _ = x_result
+            else:
+                x_leaderboard = x_result
+            
+            # Get Reddit leaderboard data
+            reddit_leaderboard = self.get_reddit_leaderboard(year, month)
+            
+            # Combine views by ambassador name
+            combined_stats = {}
+            
+            # Process X data (impressions = views)
+            for ambassador in x_leaderboard:
+                name = ambassador["name"]
+                combined_stats[name] = {
+                    "name": name,
+                    "x_views": ambassador["total_impressions"],
+                    "reddit_views": 0,
+                    "total_views": ambassador["total_impressions"]
+                }
+            
+            # Process Reddit data
+            for ambassador in reddit_leaderboard:
+                name = ambassador["name"]
+                if name not in combined_stats:
+                    combined_stats[name] = {
+                        "name": name,
+                        "x_views": 0,
+                        "reddit_views": ambassador["total_views"],
+                        "total_views": ambassador["total_views"]
+                    }
+                else:
+                    combined_stats[name]["reddit_views"] = ambassador["total_views"]
+                    combined_stats[name]["total_views"] += ambassador["total_views"]
+            
+            # Convert to list and sort by total views
+            total_leaderboard = list(combined_stats.values())
+            
+            # Separate Tony from other ambassadors
+            tony_entry = None
+            other_ambassadors = []
+            
+            for ambassador in total_leaderboard:
+                if ambassador["name"].lower() == "tony":
+                    tony_entry = ambassador
+                else:
+                    other_ambassadors.append(ambassador)
+            
+            # Sort other ambassadors by total views (descending)
+            other_ambassadors.sort(key=lambda x: x["total_views"], reverse=True)
+            
+            # Create final leaderboard with Tony at the bottom
+            final_leaderboard = other_ambassadors
+            if tony_entry:
+                final_leaderboard.append(tony_entry)
+            
+            return final_leaderboard
+        except Exception as e:
+            print(f"❌ Total leaderboard error: {e}")
+            return []
+    
+    def get_available_months(self):
+        """Get list of available months with data from both X and Reddit platforms"""
+        try:
+            months_set = set()
+            
+            # Get months from X data
+            x_result = self.supabase.table("ambassadors").select("date_posted").not_.is_("date_posted", "null").execute()
+            if x_result.data:
+                for record in x_result.data:
+                    if record["date_posted"]:
+                        date_obj = datetime.fromisoformat(record["date_posted"]).date()
+                        # Filter out June 2025 and any future dates
+                        if not (date_obj.year == 2025 and date_obj.month == 6):
+                            months_set.add((date_obj.year, date_obj.month))
+            
+            # Get months from Reddit data
+            reddit_result = self.supabase.table("reddit").select("submitted_at").not_.is_("Score", "null").execute()
+            if reddit_result.data:
+                for record in reddit_result.data:
+                    if record["submitted_at"]:
+                        date_obj = datetime.fromisoformat(record["submitted_at"]).date()
+                        # Filter out June 2025 and any future dates
+                        if not (date_obj.year == 2025 and date_obj.month == 6):
+                            months_set.add((date_obj.year, date_obj.month))
+            
+            # Convert to sorted list of tuples (year, month), filter out future dates
+            current_date = datetime.now().date()
+            available_months = sorted([
+                (year, month) for year, month in months_set 
+                if datetime(year, month, 1).date() <= current_date
+            ], reverse=True)
+            return available_months
+        except Exception as e:
+            print(f"❌ Error getting available months: {e}")
+            return []
+    
+    def remove_june_2025_data(self):
+        """Remove any erroneous June 2025 data from the database"""
+        try:
+            # Remove from X/Twitter data
+            x_result = self.supabase.table("ambassadors").delete().gte("date_posted", "2025-06-01").lt("date_posted", "2025-07-01").execute()
+            x_deleted = len(x_result.data) if x_result.data else 0
+            
+            # Remove from Reddit data  
+            reddit_result = self.supabase.table("reddit").delete().gte("submitted_at", "2025-06-01").lt("submitted_at", "2025-07-01").execute()
+            reddit_deleted = len(reddit_result.data) if reddit_result.data else 0
+            
+            # Remove from daily impressions data
+            daily_result = self.supabase.table("daily_impressions").delete().gte("date", "2025-06-01").lt("date", "2025-07-01").execute()
+            daily_deleted = len(daily_result.data) if daily_result.data else 0
+            
+            total_deleted = x_deleted + reddit_deleted + daily_deleted
+            print(f"🗑️ Removed June 2025 data: {x_deleted} X posts, {reddit_deleted} Reddit posts, {daily_deleted} daily records")
+            
+            return True, f"Removed {total_deleted} June 2025 records"
+        except Exception as e:
+            print(f"❌ Error removing June 2025 data: {e}")
+            return False, f"Error: {str(e)}"
