@@ -399,44 +399,64 @@ class UpdateService:
             return False, f"Auto-calculation error: {str(e)}"
     
     def get_total_leaderboard(self, year=None, month=None):
-        """Get combined views leaderboard from both X and Reddit platforms"""
+        """Get combined views leaderboard from both X and Reddit platforms - only counts posts with >500 impressions/views"""
         try:
-            # Get X leaderboard data
-            x_result = self.get_leaderboard(year, month)
-            if isinstance(x_result, tuple):
-                x_leaderboard, _ = x_result
-            else:
-                x_leaderboard = x_result
+            # Get X data directly from database with 500+ impression filter
+            query = self.supabase.table("ambassadors").select("*").not_.is_("date_posted", "null").gt("Impressions", 500)
             
-            # Get Reddit leaderboard data
-            reddit_leaderboard = self.get_reddit_leaderboard(year, month)
+            # Filter by month/year if provided
+            if year and month:
+                # Get start and end of month
+                start_date = datetime(year, month, 1).date()
+                from calendar import monthrange
+                last_day = monthrange(year, month)[1]
+                end_date = datetime(year, month, last_day).date()
+                
+                query = query.gte("date_posted", start_date.isoformat()).lte("date_posted", end_date.isoformat())
+            
+            x_result = query.execute()
+            
+            # Get Reddit data directly from database (no filtering - include all Reddit posts)
+            reddit_query = self.supabase.table("reddit").select("*").not_.is_("Score", "null")
+            
+            # Filter by month/year if provided
+            if year and month:
+                reddit_query = reddit_query.gte("submitted_at", start_date.isoformat()).lte("submitted_at", end_date.isoformat())
+            
+            reddit_result = reddit_query.execute()
             
             # Combine views by ambassador name
             combined_stats = {}
             
-            # Process X data (impressions = views)
-            for ambassador in x_leaderboard:
-                name = ambassador["name"]
-                combined_stats[name] = {
-                    "name": name,
-                    "x_views": ambassador["total_impressions"],
-                    "reddit_views": 0,
-                    "total_views": ambassador["total_impressions"]
-                }
+            # Process X data (impressions = views) - only posts with >500 impressions
+            if x_result.data:
+                for tweet in x_result.data:
+                    name = tweet["Ambassador"]
+                    if name not in combined_stats:
+                        combined_stats[name] = {
+                            "name": name,
+                            "x_views": 0,
+                            "reddit_views": 0,
+                            "total_views": 0
+                        }
+                    combined_stats[name]["x_views"] += tweet["Impressions"]
+                    combined_stats[name]["total_views"] += tweet["Impressions"]
             
-            # Process Reddit data
-            for ambassador in reddit_leaderboard:
-                name = ambassador["name"]
-                if name not in combined_stats:
-                    combined_stats[name] = {
-                        "name": name,
-                        "x_views": 0,
-                        "reddit_views": ambassador["total_views"],
-                        "total_views": ambassador["total_views"]
-                    }
-                else:
-                    combined_stats[name]["reddit_views"] = ambassador["total_views"]
-                    combined_stats[name]["total_views"] += ambassador["total_views"]
+            # Process Reddit data - include all Reddit posts (use actual Views field)
+            if reddit_result.data:
+                for post in reddit_result.data:
+                    name = post["poster"]
+                    views = post.get("Views", 0) if post.get("Views") else 0
+                    if name not in combined_stats:
+                        combined_stats[name] = {
+                            "name": name,
+                            "x_views": 0,
+                            "reddit_views": views,
+                            "total_views": views
+                        }
+                    else:
+                        combined_stats[name]["reddit_views"] += views
+                        combined_stats[name]["total_views"] += views
             
             # Convert to list and sort by total views
             total_leaderboard = list(combined_stats.values())
