@@ -127,12 +127,10 @@ class UpdateService:
                     }
                 
                 ambassador_stats[name]["tweets"] += 1
-                # Only count impressions for posts with at least 500 views
-                if tweet["Impressions"] >= 500:
-                    ambassador_stats[name]["total_impressions"] += tweet["Impressions"]
-                    ambassador_stats[name]["total_likes"] += tweet["Likes"]
-                    ambassador_stats[name]["total_replies"] += tweet["Replies"]
-                    ambassador_stats[name]["total_retweets"] += tweet["Retweets"]
+                ambassador_stats[name]["total_impressions"] += tweet["Impressions"]
+                ambassador_stats[name]["total_likes"] += tweet["Likes"]
+                ambassador_stats[name]["total_replies"] += tweet["Replies"]
+                ambassador_stats[name]["total_retweets"] += tweet["Retweets"]
                 
                 # Always add to total for top metric (regardless of 500+ filter)
                 total_impressions_all += tweet["Impressions"]
