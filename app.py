@@ -45,7 +45,7 @@ if page == "✨ Submit Content":
     
     with st.form("content_form"):
         ambassador = st.selectbox("Ambassador", [
-            "Tony", "Emlanis", "MonsieurPl4nche", "Martinezz", 
+            "Tony", "Emlanis", "Sir Thanos", "Martinezz", 
             "Beltein", "Odi", "Frifalin", "BlackOwl"
         ])
         content_url = st.text_input("Content URL")
