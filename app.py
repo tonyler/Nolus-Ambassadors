@@ -247,8 +247,16 @@ elif page == "🟠 Reddit Leaderboard":
     
     with col3:
         if st.button("🔄 Refresh", key="refresh_reddit"):
-            print("🔄 Refresh button clicked - reloading Reddit leaderboard data...")
-            st.rerun()
+            with st.spinner("Refreshing Reddit stats..."):
+                print("🔄 Refresh button clicked - updating Reddit stats and reloading data...")
+                success, message = service.update_reddit_stats()
+                if success:
+                    st.success(f"✅ {message}")
+                    time.sleep(1)
+                else:
+                    st.error(f"❌ {message}")
+                    time.sleep(2)
+                st.rerun()
     
     with st.spinner("Loading Reddit leaderboard..."):
         print("📊 Loading Reddit leaderboard data from database...")

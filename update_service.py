@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
 import streamlit as st
+import praw
 
 load_dotenv()
 
@@ -12,12 +13,29 @@ class UpdateService:
         try:
             url = st.secrets["SUPABASE_URL"]
             key = st.secrets["SUPABASE_ANON_KEY"]
+            reddit_client_id = st.secrets.get("REDDIT_CLIENT_ID")
+            reddit_client_secret = st.secrets.get("REDDIT_CLIENT_SECRET") 
+            reddit_user_agent = st.secrets.get("REDDIT_USER_AGENT")
         except:
             url = os.getenv("SUPABASE_URL")
             key = os.getenv("SUPABASE_ANON_KEY")
+            reddit_client_id = os.getenv("REDDIT_CLIENT_ID")
+            reddit_client_secret = os.getenv("REDDIT_CLIENT_SECRET")
+            reddit_user_agent = os.getenv("REDDIT_USER_AGENT")
         
         self.supabase = create_client(url, key)
-        print("☁️ Streamlit Cloud service initialized")
+        
+        # Initialize Reddit API client
+        try:
+            self.reddit = praw.Reddit(
+                client_id=reddit_client_id,
+                client_secret=reddit_client_secret,
+                user_agent=reddit_user_agent
+            )
+            print("☁️ Streamlit Cloud service initialized with Reddit API")
+        except Exception as e:
+            print(f"⚠️ Reddit API initialization failed: {e}")
+            self.reddit = None
     
     def extract_tweet_id(self, tweet_url):
         try:
@@ -519,6 +537,78 @@ class UpdateService:
         except Exception as e:
             print(f"❌ Error getting available months: {e}")
             return []
+    
+    def update_reddit_stats(self):
+        """Update Reddit stats by fetching fresh data from Reddit API - current month only"""
+        try:
+            if not self.reddit:
+                return False, "Reddit API not initialized - check credentials"
+            
+            # Get current month date range
+            current_date = datetime.now()
+            start_date = datetime(current_date.year, current_date.month, 1).date()
+            from calendar import monthrange
+            last_day = monthrange(current_date.year, current_date.month)[1]
+            end_date = datetime(current_date.year, current_date.month, last_day).date()
+            
+            # Get only current month's Reddit posts from database
+            reddit_posts = self.supabase.table("reddit").select("*").gte("submitted_at", start_date.isoformat()).lte("submitted_at", end_date.isoformat()).execute()
+            
+            if not reddit_posts.data:
+                current_month_name = current_date.strftime("%B %Y")
+                return True, f"No Reddit posts found for {current_month_name}"
+            
+            updated_count = 0
+            failed_count = 0
+            
+            for post in reddit_posts.data:
+                try:
+                    post_id = self.extract_reddit_id(post.get('url', ''))
+                    if not post_id:
+                        print(f"⚠️ Could not extract post ID from URL: {post.get('url', 'No URL')}")
+                        failed_count += 1
+                        continue
+                    
+                    # Fetch post data from Reddit API
+                    reddit_post = self.reddit.submission(id=post_id)
+                    
+                    # Get fresh stats
+                    score = reddit_post.score
+                    num_comments = reddit_post.num_comments
+                    
+                    # Reddit doesn't provide view count in API, so we'll keep existing value or set 0
+                    existing_views = post.get('Views', 0)
+                    
+                    # Update database with fresh stats
+                    update_data = {
+                        'Score': score,
+                        'Comments': num_comments,
+                        'Views': existing_views  # Keep existing views as Reddit API doesn't provide this
+                    }
+                    
+                    self.supabase.table("reddit").update(update_data).eq("id", post["id"]).execute()
+                    
+                    print(f"✅ Updated {post.get('poster', 'Unknown')}'s post: Score={score}, Comments={num_comments}")
+                    updated_count += 1
+                    
+                except Exception as post_error:
+                    print(f"❌ Failed to update post {post_id}: {str(post_error)}")
+                    failed_count += 1
+                    continue
+            
+            current_month_name = current_date.strftime("%B %Y")
+            print(f"📊 Reddit API refresh complete for {current_month_name}: {updated_count} updated, {failed_count} failed")
+            
+            if updated_count > 0:
+                return True, f"Updated {updated_count} {current_month_name} Reddit posts with fresh API data"
+            elif failed_count > 0:
+                return False, f"Failed to update {failed_count} {current_month_name} posts - check post URLs and API access"
+            else:
+                return True, f"No {current_month_name} posts needed updating"
+            
+        except Exception as e:
+            print(f"❌ Error updating Reddit stats: {e}")
+            return False, f"Reddit API error: {str(e)}"
     
     def remove_june_2025_data(self):
         """Remove any erroneous June 2025 data from the database"""
